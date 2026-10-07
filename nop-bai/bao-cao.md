@@ -18,11 +18,11 @@
 
 **Bộ siêu tham số đã chọn:** `n_estimators=200`, `learning_rate=0.1`, `max_depth=5`.
 
-**Lý do:** Run 3 đạt F1 cao nhất tại ngưỡng mặc định, vượt 0.65; run 1 đạt accuracy cao nhất. Recall tăng 0.6048→0.6371, precision giảm 0.8621→0.8144. Chênh lệch F1 nhỏ trên 500 mẫu chưa chứng minh ưu thế ổn định. Giảm learning rate thường cần thêm cây; ba cấu hình chưa cô lập ảnh hưởng từng tham số.
+**Lý do:** Run 3 đạt F1 cao nhất, vượt 0.65. So với run 1, recall tăng 0.6048→0.6371, precision giảm 0.8621→0.8144. Chênh lệch nhỏ trên 500 mẫu chưa chứng minh ưu thế ổn định; ba cấu hình chưa cô lập ảnh hưởng từng tham số.
 
 ## 2. Vì Sao Ngưỡng Chất Lượng Đặt Trên F1 Chứ Không Phải Accuracy
 
-Lớp thu nhập cao chiếm khoảng 24.8%; luôn đoán thu nhập thấp vẫn đạt accuracy 0.752 nhưng F1 lớp dương bằng 0. F1 kết hợp precision và recall. Dùng F1 nhị phân với target=1: weighted chịu trọng số lớp đông, macro trung bình hai lớp; cả hai khác chỉ số gate yêu cầu. Nếu tìm khách hàng tiềm năng, bỏ sót gây mất cơ hội nên ưu tiên recall; chi phí cần xác định theo ứng dụng.
+Luôn đoán thu nhập thấp đạt accuracy 0.752 trên holdout nhưng F1 lớp dương bằng 0. Gate dùng F1 nhị phân với target=1, kết hợp precision và recall; weighted chịu trọng số lớp đông, macro trung bình hai lớp. Nếu tìm khách hàng tiềm năng, bỏ sót gây mất cơ hội nên ưu tiên recall; chi phí tùy ứng dụng.
 
 ## 3. Khó Khăn Gặp Phải và Cách Giải Quyết
 
@@ -30,20 +30,21 @@ Lớp thu nhập cao chiếm khoảng 24.8%; luôn đoán thu nhập thấp vẫ
 |---|---|---|
 | MLflow cần `pkg_resources`. | Setuptools 84 không còn API này. | Đã hạ và cố định setuptools 80.9.0. |
 | Không tạo được bucket S3. | IAM user thiếu quyền `s3:CreateBucket`. | Gắn policy giới hạn bucket lab; DVC đã push thành công. |
+| CI lỗi fingerprint SSH. | Fingerprint ED25519 khác host key ECDSA được Action chọn. | Lấy fingerprint ECDSA trực tiếp từ EC2, cập nhật variable và chạy lại Release. |
 
 ## 4. So Sánh Bước 2 và Bước 3
 
 | | f1_score | accuracy |
 |---|---|---|
-| Bước 2 (chỉ `train_batch1`) | Chưa chạy CI | Chưa chạy CI |
-| Bước 3 (thêm `train_batch2`) | Chưa thực hiện | Chưa thực hiện |
+| Bước 2 (22.361 mẫu) | 0.7149 | 0.8740 |
+| Bước 3 (44.722 mẫu) | 0.7354 | 0.8820 |
 
-**Nhận xét:** Sẽ bổ sung kết quả thực tế sau hai lần chạy CI.
+**Nhận xét:** Cùng holdout 500 mẫu và siêu tham số, F1 tăng 0.0205, accuracy tăng 0.0080; precision tăng 0.8144→0.8283, recall tăng 0.6371→0.6613. Cải thiện này chưa khái quát cho mọi dữ liệu. Commit `1b0fa90` chỉ đổi con trỏ DVC, kích hoạt pipeline. API xác nhận deployment và SHA-256 khớp manifest S3.
 
 ## 5. Phần Bonus Đã Thực Hiện
 
 - [ ] Bonus 1: Chưa tích hợp DagsHub.
-- [x] Bonus 2: Quét 0.1–0.9, bước 0.05: run 3 đạt F1 0.7368 tại 0.30, so với 0.7149 tại 0.5. Tối ưu trên holdout đã quan sát; gate giữ mặc định.
-- [ ] Bonus 3: Đã tạo `detail.txt`; còn tích hợp và upload artifact trên CI.
+- [x] Bonus 2: Quét 0.1–0.9, bước 0.05: batch 2 đạt F1 0.7537 tại 0.30, so với 0.7354 tại 0.5. Tối ưu trên holdout đã quan sát; gate giữ mặc định.
+- [x] Bonus 3: CI tạo confusion matrix, precision/recall từng lớp trong `detail.txt`, upload cùng `report.json`. Nhận xét chi phí sai lầm ở mục 2.
 - [ ] Bonus 4: Chưa tích hợp so sánh model hiện hành.
-- [x] Bonus 5: Tỷ lệ dương 24.7708%, không cảnh báo; tests xác nhận chỉ cảnh báo khi lệch hơn 5 điểm phần trăm.
+- [x] Bonus 5: Batch 2 có tỷ lệ dương 24.7842%, không cảnh báo; tests xác nhận chỉ cảnh báo khi lệch hơn 5 điểm phần trăm.
