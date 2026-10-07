@@ -1,93 +1,75 @@
-import os
+"""Training integration tests with isolated data, outputs and MLflow storage."""
+
 import json
+
+import joblib
+import mlflow
 import numpy as np
 import pandas as pd
+import pytest
+from sklearn.metrics import accuracy_score, f1_score
+
+from src.schema import FEATURE_NAMES
 from src.train import train
 
 
-FEATURE_NAMES = [
-    "age", "workclass", "education_num", "marital_status", "occupation",
-    "relationship", "sex", "capital_gain", "capital_loss", "hours_per_week",
-]
-
-
-def _make_temp_data(tmp_path):
-    """
-    Tao dataset nho voi cung schema Adult de su dung trong test.
-
-    pytest cung cap `tmp_path` la mot thu muc tam thoi, tu dong xoa sau khi test ket thuc.
-    Ham nay dung du lieu ngau nhien nen khong can ket noi cloud storage hay tai file CSV thuc.
-    """
+@pytest.fixture(scope="module")
+def trained_run(tmp_path_factory):
+    root = tmp_path_factory.mktemp("training")
     rng = np.random.default_rng(0)
-    n = 200
-
-    # TODO 1: Tao mang X co kich thuoc (n, len(FEATURE_NAMES)) voi gia tri [0, 1)
-    # X = rng.random((n, len(FEATURE_NAMES)))
-
-    # TODO 2: Tao mang y gom n phan tu nguyen ngau nhien trong [0, 2)
-    # Chu y: bai toan nay chi co HAI lop (0 va 1), nen can tren la 2.
-    # y = rng.integers(0, 2, size=n)
-
-    # TODO 3: Xay dung DataFrame, them cot "target"
-    # df = pd.DataFrame(X, columns=FEATURE_NAMES)
-    # df["target"] = y
-
-    # TODO 4: Luu 160 dong dau lam tap huan luyen, 40 dong cuoi lam tap holdout
-    # train_path = str(tmp_path / "train.csv")
-    # eval_path  = str(tmp_path / "holdout.csv")
-    # df.iloc[:160].to_csv(train_path, index=False)
-    # df.iloc[160:].to_csv(eval_path,  index=False)
-
-    # TODO 5: Tra ve (train_path, eval_path)
-    # return train_path, eval_path
-
-    pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
-
-
-def test_train_returns_float(tmp_path):
-    """Kiem tra ham train() tra ve mot so thuc nam trong [0.0, 1.0]."""
-    train_path, eval_path = _make_temp_data(tmp_path)
-
-    # TODO 6: Goi ham train() voi sieu tham so nho
-    # (n_estimators=10, learning_rate=0.1, max_depth=2) va cac duong dan file vua tao
-    # f1 = train({"n_estimators": 10, "learning_rate": 0.1, "max_depth": 2}, ...)
-
-    # TODO 7: Kiem tra ket qua
-    # assert isinstance(f1, float)
-    # assert 0.0 <= f1 <= 1.0
-
-    pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
+    features = rng.random((200, len(FEATURE_NAMES)))
+    frame = pd.DataFrame(features, columns=FEATURE_NAMES)
+    # A learnable binary target tests actual training, without a quality-gate
+    # assertion on randomly generated data.
+    frame["target"] = (features[:, 0] + features[:, 1] > 1.0).astype(int)
+    train_path, eval_path = root / "train.csv", root / "holdout.csv"
+    frame.iloc[:160].to_csv(train_path, index=False)
+    frame.iloc[160:].to_csv(eval_path, index=False)
+    original_uri = mlflow.get_tracking_uri()
+    try:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("MLFLOW_TRACKING_URI", (root / "tracking").as_uri())
+            patch.setenv("MLFLOW_ARTIFACT_ROOT", str(root / "artifacts"))
+            patch.setenv("MLFLOW_EXPERIMENT_NAME", "test-adult-income")
+            score = train(
+                {"n_estimators": 10, "learning_rate": 0.1, "max_depth": 2},
+                data_path=str(train_path), eval_path=str(eval_path),
+                output_dir=root / "outputs", model_dir=root / "models", run_name="test-run",
+            )
+            client = mlflow.tracking.MlflowClient()
+            report = json.loads((root / "outputs" / "report.json").read_text())
+            run = client.get_run(report["mlflow_run_id"])
+    finally:
+        mlflow.set_tracking_uri(original_uri)
+    return root, score, frame.iloc[160:], run
 
 
-def test_report_file_created(tmp_path):
-    """Kiem tra file outputs/report.json duoc tao sau khi huan luyen."""
-    train_path, eval_path = _make_temp_data(tmp_path)
-    train(
-        {"n_estimators": 10, "learning_rate": 0.1, "max_depth": 2},
-        data_path=train_path,
-        eval_path=eval_path,
-    )
-
-    # TODO 8: Kiem tra file ton tai va noi dung dung dinh dang
-    # assert os.path.exists("outputs/report.json")
-    # with open("outputs/report.json") as f:
-    #     report = json.load(f)
-    # assert "f1_score" in report
-    # assert "accuracy" in report
-
-    pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
+def test_train_returns_float(trained_run):
+    _, score, _, _ = trained_run
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
 
 
-def test_model_file_created(tmp_path):
-    """Kiem tra file models/model.joblib duoc tao sau khi huan luyen."""
-    train_path, eval_path = _make_temp_data(tmp_path)
-    train(
-        {"n_estimators": 10, "learning_rate": 0.1, "max_depth": 2},
-        data_path=train_path,
-        eval_path=eval_path,
-    )
+def test_report_file_created(trained_run):
+    root, score, _, run = trained_run
+    report = json.loads((root / "outputs" / "report.json").read_text())
+    assert report["f1_score"] == score
+    assert 0.0 <= report["accuracy"] <= 1.0
+    assert report["train_samples"] == 160 and report["eval_samples"] == 40
+    assert report["feature_names"] == FEATURE_NAMES
+    assert report["decision_threshold"] == 0.5
+    assert run.info.status == "FINISHED"
+    assert run.data.metrics["f1_score"] == score
+    assert run.data.metrics["accuracy"] == report["accuracy"]
+    detail = (root / "outputs" / "detail.txt").read_text()
+    assert "Confusion matrix" in detail
+    assert "thu_nhap_cao" in detail
 
-    # TODO 9: Kiem tra file model ton tai
-    # assert os.path.exists("models/model.joblib")
 
-    pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
+def test_model_file_created(trained_run):
+    root, score, evaluation, _ = trained_run
+    model = joblib.load(root / "models" / "model.joblib")
+    predictions = model.predict(evaluation[FEATURE_NAMES])
+    report = json.loads((root / "outputs" / "report.json").read_text())
+    assert f1_score(evaluation["target"], predictions, zero_division=0) == score
+    assert accuracy_score(evaluation["target"], predictions) == report["accuracy"]

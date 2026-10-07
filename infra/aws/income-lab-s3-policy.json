@@ -1,0 +1,42 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateLabBucketInSingapore",
+      "Effect": "Allow",
+      "Action": "s3:CreateBucket",
+      "Resource": "arn:aws:s3:::income-lab-866865534788-day21",
+      "Condition": {
+        "StringEquals": {
+          "s3:LocationConstraint": "ap-southeast-1"
+        }
+      }
+    },
+    {
+      "Sid": "ManageLabBucketAccessAndListData",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:ListBucketMultipartUploads",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock"
+      ],
+      "Resource": "arn:aws:s3:::income-lab-866865534788-day21"
+    },
+    {
+      "Sid": "ReadWriteLabDataAndModels",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": [
+        "arn:aws:s3:::income-lab-866865534788-day21/dvc/*",
+        "arn:aws:s3:::income-lab-866865534788-day21/artifacts/*"
+      ]
+    }
+  ]
+}

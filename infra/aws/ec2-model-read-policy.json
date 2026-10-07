@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadCurrentManifestAndReleasedModel",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::income-lab-866865534788-day21/artifacts/current/report.json",
+        "arn:aws:s3:::income-lab-866865534788-day21/artifacts/releases/*"
+      ]
+    }
+  ]
+}
